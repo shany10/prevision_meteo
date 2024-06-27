@@ -33,13 +33,25 @@ class TemperatureController extends Controller
 
     //TEST
 
-    //exemple => http://localhost:8000/api/test_temperature/15  
-    public function test_temperature($temperature)
+    //method POST
+    //exemple => http://localhost:8000/api/test_temperature
+    public function test_temperature(Request $request)
+    {
+        $request = $request->all();
+        $temperature = $this->get_temperature($request);
+        var_dump($temperature);
+        die;
+    }
+
+    //method GET
+    //exemple => http://localhost:8000/api/test_compare_temperature/15  
+    public function test_compare_temperature($temperature)
     {
         $weather = $this->compare_temperature($temperature);
         var_dump($weather);
     }
 
+    //method GET
     //exemple => http://localhost:8000/api/test_outfit/hot 
     public function test_outfit($weather)
     {
@@ -51,6 +63,14 @@ class TemperatureController extends Controller
 
     private function get_temperature($data)
     {
+        if (!is_array($data) && ! is_object($data)) {
+            var_dump("ERROR => Format de donnée invalide");
+            die;
+        }
+        if (count($data) == 0) {
+            var_dump(("ERROR => Absence de donnée"));
+            die;
+        }
         if (!empty($data["current"])) return $data["current"]["temp_c"];
         else if (!empty($data["error"])) {
             var_dump($data["error"]);
@@ -82,7 +102,7 @@ class TemperatureController extends Controller
 
         return DB::table("outfits")
             ->where("categorie", $weather)
-            ->select(["id", "name", "categorie"])
+            ->select(["id", "name"])
             ->get();
     }
 
@@ -92,14 +112,15 @@ class TemperatureController extends Controller
             var_dump("ERROR => categorie inconnu");
             die;
         }
-        if (is_array($outfit)) {
+        if (is_array($outfit) || is_object($outfit)) {
             if (count($outfit) > 0) {
+
                 $arr_data = [
                     "products" => $outfit,
                     "weather" => [
                         "city" => $city,
                         "waether" => $weather,
-                        "date" => ""
+                        "date" => "today"
                     ]
                 ];
 
