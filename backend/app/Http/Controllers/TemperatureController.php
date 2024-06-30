@@ -2,133 +2,166 @@
 
 namespace App\Http\Controllers;
 
-use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use stdClass;
+
 
 class TemperatureController extends Controller
 {
     public function get_outfit(Request $request): JsonResponse
     {
         $request_data = $request->all();
-        try {
-            $response = Http::get("http://api.weatherapi.com/v1/current.json?key=" .
-                env('WEATHER_API_KEY') .
-                "&q=" . $request_data["weather"]["city"]);
-        } catch (Exception $e) {
-            echo "Problème survenu lors de l'appelle de l'api Weather : $e";
-            die;
-        }
 
-        $data = $response->json();
-        $temperature = $this->get_temperature($data);
+        $response = $this->call_weather_api($request_data);
+        if (!empty($response["error"])) return response()->json($response["error"], 500);
+
+        $temperature = $this->get_temperature($response);
+        if (!empty($temperature["error"])) return response()->json($temperature["error"], 500);
+
         $weather = $this->compare_temperature($temperature);
+        if (!empty($weather["error"])) return response()->json($weather["error"], 500);
+
         $outfit = $this->find_outfit($weather);
-        $final_response = $this->data_constructor($request_data["weather"]["city"], $weather, $outfit);
-        return response()->json($final_response);
+        if (!empty($outfit["error"])) return response()->json($outfit["error"], 500);
+
+        $finale_response = $this->data_constructor($request_data, $weather, $outfit);
+
+        return response()->json($finale_response);
     }
 
-
-    //TEST
-
-    //method POST
-    //exemple => http://localhost:8000/api/test_temperature
-    public function test_temperature(Request $request)
-    {
-        $request = $request->all();
-        $temperature = $this->get_temperature($request);
-        var_dump($temperature);
-        die;
-    }
-
-    //method GET
-    //exemple => http://localhost:8000/api/test_compare_temperature/15  
-    public function test_compare_temperature($temperature)
-    {
-        $weather = $this->compare_temperature($temperature);
-        var_dump($weather);
-    }
-
-    //method GET
-    //exemple => http://localhost:8000/api/test_outfit/hot 
-    public function test_outfit($weather)
-    {
-        $outfit = $this->find_outfit($weather);
-        var_dump($outfit);
-    }
 
     //METHOD
 
-    private function get_temperature($data)
+    // Récupérer les données provenant de l'api weather 
+    private function call_weather_api($request_data)
     {
-        if (!is_array($data) && ! is_object($data)) {
-            var_dump("ERROR => Format de donnée invalide");
-            die;
+        $url = "http://api.weatherapi.com/v1/current.json?key=" .
+            env('WEATHER_API_KEY') .
+            "&q=" .
+            $request_data["weather"]["city"];
+
+        if (!empty($request_data["dt"])) {
+            preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $request_data["dt"], $match);
+            if (count($match) != 0) $url = $url . "&dt=" . $request_data["dt"];
+            else return ["error" => [
+                "code" => 500,
+                "message" => "format de date invalide"
+            ]];
         }
-        if (count($data) == 0) {
-            var_dump(("ERROR => Absence de donnée"));
-            die;
+
+        $response = Http::get($url);
+        $response = $response->json();
+
+        return $response;
+    }
+
+    // Récupérer le temperature present dans la reponse de l'api weather
+    private function get_temperature($response)
+    {
+        if (!is_array($response) && !is_object($response)) {
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "Format de donnée invalide"
+                ]
+            ];
         }
-        if (!empty($data["current"])) return $data["current"]["temp_c"];
-        else if (!empty($data["error"])) {
-            var_dump($data["error"]);
-            die;
+        if (count($response) == 0) {
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "Absence de temperature"
+                ]
+            ];
+        }
+        if (!empty($response["current"])) {
+            return $response["current"]["temp_c"];
         } else {
-            var_dump("ERROR => Erreur indéterminée");
-            die;
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "Erreur indéterminée"
+                ]
+            ];
         }
     }
 
+    // Comparer les températures à fin de savoir quel type de temps il s'agit (cold, lukewarm, hot)
     private function compare_temperature($temperature)
     {
-        preg_match('/[a-z A-Z]/', $temperature, $match);
-        if (!empty($match)) {
-            var_dump("ERROR => Format de temperature invalide");
-            die;
+        if (!is_int($temperature) && !is_float($temperature) && !is_string($temperature)) {
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "Format de temperature invalideeee"
+                ]
+            ];
         }
-        if ($temperature < 10) return "cold";
-        elseif ($temperature >= 10 && $temperature < 20) return "lukewarm";
-        elseif ($temperature >= 20) return "hot";
+        preg_match('/^[\.0-9]*$/', $temperature, $match);
+        if (!empty($match)) {
+            if ($temperature < 10) return "cold";
+            elseif ($temperature >= 10 && $temperature < 20) return "lukewarm";
+            elseif ($temperature >= 20) return "hot";
+        } else {
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "Format de temperature invalide"
+                ]
+            ];
+        }
     }
 
+    // Trouver les tenus approprié au temps
     private function find_outfit(string $weather)
     {
         if ($weather != "cold" && $weather != "lukewarm" && $weather != "hot") {
-            var_dump("ERROR => categorie inconnu");
-            die;
+            return [
+                "error" => [
+                    "code" => 500,
+                    "message" => "categorie inconnu"
+                ]
+            ];
         }
 
         return DB::table("outfits")
             ->where("categorie", $weather)
-            ->select(["id", "name"])
+            ->select(["id", "name", "price"])
             ->get();
     }
 
-    private function data_constructor(string $city, string $weather, $outfit)
+    private function data_constructor($request_data, string $weather, $outfit)
     {
         if ($weather != "hot" && $weather != "cold" && $weather != "lukewarm") {
-            var_dump("ERROR => categorie inconnu");
-            die;
+            return var_dump([
+                "error" => "categorie inconnu",
+                "code" => 500
+            ]);
         }
+
+
         if (is_array($outfit) || is_object($outfit)) {
             if (count($outfit) > 0) {
-
-                $arr_data = [
-                    "products" => $outfit,
-                    "weather" => [
-                        "city" => $city,
-                        "waether" => $weather,
-                        "date" => "today"
-                    ]
+                $object_data = new stdClass();
+                $object_data->products = $outfit;
+                $date = date("Y-m-d");
+                if (!empty($request_data["dt"])) $date = $request_data["dt"];
+                $object_data->weather = [
+                    "city" => $request_data["weather"]["city"],
+                    "is" => $weather,
+                    "date" => $date
                 ];
 
-                return $arr_data;
+                return $object_data;
             }
         } else {
-            var_dump("Navré il n'y a plus d'article en stock");
-            die;
+            return [
+                "message" => "Article epuisé",
+                "code" => 200
+            ];
         }
     }
 }

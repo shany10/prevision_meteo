@@ -20,8 +20,5 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
 
 Route::post('/getOutfit', [TemperatureController::class, 'get_outfit']);
 
-//Test
-Route::post('/test_temperature', [TemperatureController::class, 'test_temperature']);
-Route::get('/test_compare_temperature/{temperature}', [TemperatureController::class, 'test_compare_temperature']);
-Route::get('/test_outfit/{weather}', [TemperatureController::class, 'test_outfit']);
+
 

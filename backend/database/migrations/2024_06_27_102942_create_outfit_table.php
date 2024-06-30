@@ -15,9 +15,10 @@ return new class extends Migration
             $table->id();
             $table->string("name");
             $table->string("categorie");
+            $table->integer("price");
             $table->timestamps();
         });
-    }
+    }   
 
     /**
      * Reverse the migrations.
